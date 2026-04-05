@@ -1,0 +1,212 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/getlantern/systray"
+	"github.com/sstallion/go-hid"
+)
+
+//go:generate go-bindata -pkg main -o icon.go icon.ico
+
+const (
+	vidKeychron   = 0x3434
+	pollInterval  = 60 * time.Second
+	queryTimeout  = 150 * time.Millisecond
+	batteryOffset = 20
+)
+
+type MouseDevice struct {
+	Path     string
+	Product  string
+	Battery  int
+	IsValid  bool
+	MenuItem *systray.MenuItem
+	mu       sync.RWMutex
+}
+
+var (
+	devices    []*MouseDevice
+	devicesMu  sync.RWMutex
+	selected   *MouseDevice
+	selectedMu sync.RWMutex
+)
+
+func main() {
+	if err := hid.Init(); err != nil {
+		log.Fatalf("HID init: %v", err)
+	}
+	systray.Run(onReady, onExit)
+}
+
+func onReady() {
+	// 1. Load icon (non-blocking)
+	if data, err := Asset("icon.ico"); err == nil {
+		systray.SetIcon(data)
+	}
+	systray.SetTooltip("Keychron Battery Monitor")
+
+	// 2. Static menu items
+	mShow := systray.AddMenuItem("🔋 Show battery", "")
+	systray.AddSeparator()
+	systray.AddMenuItem("🖱️ Devices:", "").Disable()
+	systray.AddSeparator()
+	mRefresh := systray.AddMenuItem("🔄 Refresh", "")
+	mQuit := systray.AddMenuItem("❌ Quit", "")
+
+	// 3. ⚡ Return immediately — do heavy work in goroutines
+	go initialScan()
+	go eventLoop(mShow, mRefresh, mQuit)
+}
+
+func initialScan() {
+	time.Sleep(200 * time.Millisecond) // Let tray stabilize
+	scanAndBuildMenu()
+	updateTooltip()
+
+	// Start polling
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		pollDevices()
+		updateTooltip()
+	}
+}
+
+func scanAndBuildMenu() {
+	devicesMu.Lock()
+	defer devicesMu.Unlock()
+	devices = nil
+
+	_ = hid.Enumerate(vidKeychron, 0, func(info *hid.DeviceInfo) error {
+		bat, ok := queryBattery(info.Path)
+		if !ok {
+			return nil
+		}
+		dev := &MouseDevice{
+			Path: info.Path, Product: info.ProductStr,
+			Battery: bat, IsValid: true,
+		}
+		devices = append(devices, dev)
+
+		// Create menu item
+		title := fmt.Sprintf("  %s: %d%%", shorten(info.ProductStr), bat)
+		item := systray.AddMenuItem(title, info.Path)
+		dev.MenuItem = item
+
+		// Click handler
+		go func(d *MouseDevice) {
+			for range item.ClickedCh {
+				selectedMu.Lock()
+				selected = d
+				selectedMu.Unlock()
+				updateTooltip()
+			}
+		}(dev)
+		return nil
+	})
+
+	// Auto-select first
+	if len(devices) > 0 {
+		selectedMu.Lock()
+		selected = devices[0]
+		selectedMu.Unlock()
+	}
+}
+
+func pollDevices() {
+	devicesMu.RLock()
+	list := make([]*MouseDevice, len(devices))
+	copy(list, devices)
+	devicesMu.RUnlock()
+
+	for _, dev := range list {
+		bat, ok := queryBattery(dev.Path)
+		dev.mu.Lock()
+		if ok {
+			dev.Battery = bat
+			dev.IsValid = true
+			if dev.MenuItem != nil {
+				dev.MenuItem.SetTitle(fmt.Sprintf("  %s: %d%%", shorten(dev.Product), bat))
+			}
+		} else {
+			dev.IsValid = false
+			if dev.MenuItem != nil {
+				dev.MenuItem.SetTitle(fmt.Sprintf("  %s: offline", shorten(dev.Product)))
+				dev.MenuItem.Disable()
+			}
+		}
+		dev.mu.Unlock()
+	}
+}
+
+func queryBattery(path string) (int, bool) {
+	dev, err := hid.OpenPath(path)
+	if err != nil {
+		return 0, false
+	}
+	defer dev.Close()
+
+	cmd := [64]byte{0xB3, 0x06}
+	if _, err := dev.Write(cmd[:]); err != nil {
+		return 0, false
+	}
+	time.Sleep(queryTimeout)
+
+	resp := make([]byte, 65)
+	n, err := dev.Read(resp)
+	if err != nil || n <= batteryOffset {
+		return 0, false
+	}
+	bat := int(resp[batteryOffset])
+	return bat, bat >= 1 && bat <= 100
+}
+
+func updateTooltip() {
+	selectedMu.RLock()
+	dev := selected
+	selectedMu.RUnlock()
+
+	var tip string
+	if dev != nil {
+		dev.mu.RLock()
+		if dev.IsValid {
+			tip = fmt.Sprintf("%s\n🔋 %d%%", dev.Product, dev.Battery)
+		} else {
+			tip = fmt.Sprintf("%s\n⚠️ offline", dev.Product)
+		}
+		dev.mu.RUnlock()
+	} else {
+		tip = "Keychron Battery Monitor\n⚠️ No devices"
+	}
+	systray.SetTooltip(tip)
+}
+
+func eventLoop(mShow, mRefresh, mQuit *systray.MenuItem) {
+	for {
+		select {
+		case <-mShow.ClickedCh:
+			updateTooltip()
+		case <-mRefresh.ClickedCh:
+			scanAndBuildMenu()
+			updateTooltip()
+		case <-mQuit.ClickedCh:
+			systray.Quit()
+			return
+		}
+	}
+}
+
+func shorten(s string) string {
+	if len(s) > 30 {
+		return s[:27] + "..."
+	}
+	return s
+}
+
+func onExit() {
+	log.Println("Exiting")
+}
