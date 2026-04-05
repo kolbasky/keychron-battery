@@ -4,13 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sstallion/go-hid"
-)
+	"keychron-tray/internal/config"
 
-const (
-	VID_KEYCHRON   = 0x3434
-	BATTERY_OFFSET = 20
-	QUERY_TIMEOUT  = 150 * time.Millisecond
+	"github.com/sstallion/go-hid"
 )
 
 type Device struct {
@@ -23,7 +19,6 @@ type Device struct {
 var Devices []Device
 var InitError error
 
-// GetBatteryData queries a single device path for battery %.
 func GetBatteryData(path string) (int, error) {
 	type result struct {
 		bat int
@@ -31,7 +26,6 @@ func GetBatteryData(path string) (int, error) {
 	}
 	done := make(chan result, 1)
 
-	// Run blocking I/O in goroutine
 	go func() {
 		dev, err := hid.OpenPath(path)
 		if err != nil {
@@ -45,16 +39,16 @@ func GetBatteryData(path string) (int, error) {
 			done <- result{0, err}
 			return
 		}
-		time.Sleep(QUERY_TIMEOUT)
+		time.Sleep(config.QueryTimeout)
 
 		resp := make([]byte, 65)
 		n, err := dev.Read(resp)
-		if err != nil || n <= BATTERY_OFFSET {
+		if err != nil || n <= config.BatteryOffset {
 			done <- result{0, fmt.Errorf("read failed or short")}
 			return
 		}
 
-		bat := int(resp[BATTERY_OFFSET])
+		bat := int(resp[config.BatteryOffset])
 		if bat < 1 || bat > 100 {
 			done <- result{0, fmt.Errorf("invalid battery: %d", bat)}
 			return
@@ -62,7 +56,6 @@ func GetBatteryData(path string) (int, error) {
 		done <- result{bat, nil}
 	}()
 
-	// Wait for result OR timeout
 	select {
 	case res := <-done:
 		return res.bat, res.err
@@ -71,9 +64,7 @@ func GetBatteryData(path string) (int, error) {
 	}
 }
 
-// GetValidDevices enumerates Keychron devices, filters non-responders.
 func GetValidDevices() ([]Device, error) {
-	// Step 1: Collect all Keychron device info (fast, no I/O)
 	type devInfo struct {
 		path    string
 		pid     uint16
@@ -81,17 +72,16 @@ func GetValidDevices() ([]Device, error) {
 	}
 	var all []devInfo
 
-	_ = hid.Enumerate(VID_KEYCHRON, 0, func(info *hid.DeviceInfo) error {
+	_ = hid.Enumerate(config.VidKeychron, 0, func(info *hid.DeviceInfo) error {
 		all = append(all, devInfo{info.Path, info.ProductID, info.ProductStr})
 		return nil
 	})
 
-	// Step 2: Query each device sequentially (normal loop, easy to debug)
 	var valid []Device
 	for _, d := range all {
 		bat, err := GetBatteryData(d.path)
 		if err != nil {
-			fmt.Printf("⊗ %s: %v\n", d.path, err)
+			fmt.Printf("🗙 %s: %v\n", d.path, err)
 			continue
 		}
 		fmt.Printf("✓ %s: %d%%\n", d.product, bat)
@@ -104,7 +94,6 @@ func GetValidDevices() ([]Device, error) {
 	return valid, nil
 }
 
-// RefreshBattery updates Battery field of a Device struct.
 func RefreshBattery(dev *Device) {
 	if bat, err := GetBatteryData(dev.Path); err == nil {
 		dev.Battery = bat
