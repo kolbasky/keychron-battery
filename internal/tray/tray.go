@@ -24,10 +24,8 @@ var (
 	devices   []keychron.Device
 	activeIdx int = -1
 
-	mRefresh *systray.MenuItem
-	mQuit    *systray.MenuItem
+	mQuit *systray.MenuItem
 
-	chRefresh     = make(chan struct{}, 1)
 	chQuit        = make(chan struct{}, 1)
 	ChDeviceClick = make(chan int, 1)
 
@@ -253,14 +251,8 @@ func DrawMenu(devs []keychron.Device) {
 	}
 
 	systray.AddSeparator()
-	mRefresh = systray.AddMenuItem("🗘 Refresh", "") // ↻ ⟲ ⭮ ⭯ ↺ 🔃 🔁
 	mQuit = systray.AddMenuItem("🗙 Quit", "")
 
-	go func() {
-		for range mRefresh.ClickedCh {
-			chRefresh <- struct{}{}
-		}
-	}()
 	go func() {
 		for range mQuit.ClickedCh {
 			chQuit <- struct{}{}
@@ -296,9 +288,8 @@ func GetActiveDevice() keychron.Device {
 
 func SetActiveDevice(idx int) { activeIdx = idx }
 
-func RefreshChan() <-chan struct{} { return chRefresh }
-func QuitChan() <-chan struct{}    { return chQuit }
-func DeviceClickChan() <-chan int  { return ChDeviceClick }
+func QuitChan() <-chan struct{}   { return chQuit }
+func DeviceClickChan() <-chan int { return ChDeviceClick }
 
 func shorten(s string) string {
 	if len(s) > 24 {

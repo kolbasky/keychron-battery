@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"keychron-tray/internal/config"
 	"keychron-tray/internal/keychron"
 	"keychron-tray/internal/logger"
 	"keychron-tray/internal/tray"
@@ -30,14 +31,14 @@ func onReady() {
 
 	tray.DrawMenu(devs)
 
-	time.Sleep(200 * time.Millisecond)
+	// time.Sleep(200 * time.Millisecond)
 
 	if active := tray.GetActiveDevice(); active.Product != "" {
 		tray.UpdateAllUI(active)
 	}
 
 	go func() {
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(config.PollIntervalSeconds * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			pollAndUpdate()
@@ -49,8 +50,6 @@ func onReady() {
 		case idx := <-tray.ChDeviceClick:
 			tray.SetActiveDevice(idx)
 			tray.UpdateAllUI(tray.GetActiveDevice())
-		case <-tray.RefreshChan():
-			refreshAndRebuild()
 		case <-tray.QuitChan():
 			systray.Quit()
 			return

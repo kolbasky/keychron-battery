@@ -3,11 +3,12 @@ package config
 import "time"
 
 const (
-	DEV_MODE = false
+	DEV_MODE = true
 
-	VidKeychron   = 0x3434
-	BatteryOffset = 20
-	QueryTimeout  = 150 * time.Millisecond
+	VidKeychron         = 0x3434
+	BatteryOffset       = 20
+	QueryTimeout        = 150 * time.Millisecond
+	PollIntervalSeconds = 60
 
 	DefaultDPI       = 96.0
 	DefaultFontSize  = 18.0
