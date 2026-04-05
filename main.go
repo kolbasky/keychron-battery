@@ -31,8 +31,6 @@ func onReady() {
 
 	tray.DrawMenu(devs)
 
-	// time.Sleep(200 * time.Millisecond)
-
 	if active := tray.GetActiveDevice(); active.Product != "" {
 		tray.UpdateAllUI(active)
 	}
