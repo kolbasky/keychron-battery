@@ -3,7 +3,7 @@ package config
 import "time"
 
 const (
-	DEV_MODE = true
+	DEV_MODE = false
 
 	VidKeychron   = 0x3434
 	BatteryOffset = 20
