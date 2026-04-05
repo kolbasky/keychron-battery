@@ -65,16 +65,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "goversioninfo failed" }
 
     # Build executable
-    Write-Host "Building keybat.exe..." -ForegroundColor Yellow
-    go build -ldflags="-H=windowsgui -s -w -buildid=" -trimpath -buildvcs=false -o keybat.exe .
+    Write-Host "Building bin\keybat.exe..." -ForegroundColor Yellow
+    go build -ldflags="-H=windowsgui -s -w -buildid=" -trimpath -buildvcs=false -o bin\keybat.exe .
     if ($LASTEXITCODE -ne 0) { throw "go build failed" }
 
     # Optional: UPX compression (separate file)
     if (Get-Command upx -ErrorAction SilentlyContinue) {
         Write-Host "Compressing with UPX..." -ForegroundColor Yellow
-        $upxOut = "keybat-upx.exe"
-        $before = (Get-Item keybat.exe).Length
-        upx -f --best --lzma -o "$upxOut" keybat.exe 2>$null | Out-Null
+        $upxOut = "bin\keybat-upx.exe"
+        $before = (Get-Item bin\keybat.exe).Length
+        upx -f --best --lzma -o "$upxOut" bin\keybat.exe 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $after = (Get-Item $upxOut).Length
             $saved = [math]::Round(($before - $after) / 1MB, 2)
@@ -84,12 +84,12 @@ try {
     }
 
     # Summary
-    $size = [math]::Round((Get-Item keybat.exe).Length / 1MB, 2)
+    $size = [math]::Round((Get-Item bin\keybat.exe).Length / 1MB, 2)
     Write-Host "`nv$Version built successfully!" -ForegroundColor Green
-    Write-Host "Output: keybat.exe ($size MB)" -ForegroundColor Cyan
-    if (Test-Path "keybat-upx.exe") {
-        $upxSize = [math]::Round((Get-Item "keybat-upx.exe").Length / 1MB, 2)
-        Write-Host "Compressed: keybat-upx.exe ($upxSize MB)" -ForegroundColor Cyan
+    Write-Host "Output: bin\keybat.exe ($size MB)" -ForegroundColor Cyan
+    if (Test-Path "bin\keybat-upx.exe") {
+        $upxSize = [math]::Round((Get-Item "bin\keybat-upx.exe").Length / 1MB, 2)
+        Write-Host "Compressed: bin\keybat-upx.exe ($upxSize MB)" -ForegroundColor Cyan
     }
 }
 finally {

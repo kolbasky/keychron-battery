@@ -5,12 +5,18 @@ import (
 	"keychron-tray/internal/config"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 func SetupLogging() {
-	logFile := "keybat.log"
+	exe, err := os.Executable()
+	if err != nil {
+		exe = os.Args[0]
+	}
+	logFile := filepath.Join(filepath.Dir(exe), "keybat.log")
+	// logFile := "C:\\Users\\mtrag\\git\\keychron-battery\\bin\\keybat.log"
 
-	_, err := os.Stat(logFile)
+	_, err = os.Stat(logFile)
 	fileExists := !os.IsNotExist(err)
 
 	var output io.Writer
