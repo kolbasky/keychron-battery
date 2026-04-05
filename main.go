@@ -15,12 +15,10 @@ import (
 var testIcon []byte
 
 func main() {
-	log.Printf("1")
 	keychron.Init()
 	if keychron.InitError != nil {
 		log.Fatalf("HID init: %v", keychron.InitError)
 	}
-	log.Printf("2")
 	log.Printf("%s", keychron.Devices)
 	systray.Run(onReady, nil)
 }

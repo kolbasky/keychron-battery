@@ -3,7 +3,7 @@ module keychron-tray
 go 1.25.5
 
 require (
-	fyne.io/systray v1.12.0
+	github.com/getlantern/systray v1.2.2
 	github.com/sstallion/go-hid v0.15.0
 	golang.org/x/image v0.38.0
 )
@@ -15,11 +15,10 @@ require (
 	github.com/getlantern/hex v0.0.0-20190417191902-c6586a6fe0b7 // indirect
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
-	github.com/getlantern/systray v1.2.2 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 )
 
 replace github.com/karalabe/hid => github.com/sstallion/go-hid v0.15.0
