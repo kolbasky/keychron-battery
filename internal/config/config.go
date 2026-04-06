@@ -8,7 +8,7 @@ const (
 	VidKeychron         = 0x3434
 	BatteryOffset       = 20
 	QueryTimeout        = 150 * time.Millisecond
-	PollIntervalSeconds = 60
+	PollIntervalSeconds = 10
 
 	DefaultDPI       = 96.0
 	DefaultFontSize  = 18.0

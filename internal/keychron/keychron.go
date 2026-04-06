@@ -2,6 +2,7 @@ package keychron
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"keychron-tray/internal/config"
@@ -10,10 +11,11 @@ import (
 )
 
 type Device struct {
-	Path    string
-	PID     uint16
-	Product string
-	Battery int
+	Path      string
+	PID       uint16
+	Product   string
+	Battery   int
+	Connected bool
 }
 
 var Devices []Device
@@ -86,7 +88,7 @@ func GetValidDevices() ([]Device, error) {
 		}
 		fmt.Printf("✓ %s: %d%%\n", d.product, bat)
 		valid = append(valid, Device{
-			Path: d.path, PID: d.pid, Product: d.product, Battery: bat,
+			Path: d.path, PID: d.pid, Product: d.product, Battery: bat, Connected: true,
 		})
 	}
 
@@ -95,8 +97,14 @@ func GetValidDevices() ([]Device, error) {
 }
 
 func RefreshBattery(dev *Device) {
+	log.Printf("🔍 Polling device: %s (%s)", dev.Product, dev.Path)
 	if bat, err := GetBatteryData(dev.Path); err == nil {
+		log.Printf("✅ Poll success: %d%%", bat)
 		dev.Battery = bat
+		dev.Connected = true
+	} else {
+		log.Printf("❌ Poll failed: %v", err)
+		dev.Connected = false
 	}
 }
 

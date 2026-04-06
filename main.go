@@ -59,10 +59,15 @@ func onReady() {
 }
 
 func pollAndUpdate() {
+	log.Printf("🔄 Starting poll cycle")
 	for i := range keychron.Devices {
 		keychron.RefreshBattery(&keychron.Devices[i])
 	}
-	tray.UpdateAllUI(tray.GetActiveDevice())
+	// Sync the updated devices to the tray module
+	tray.SyncDevices(keychron.Devices)
+	activeDev := tray.GetActiveDevice()
+	log.Printf("📱 Active device after sync: %+v", activeDev)
+	tray.UpdateAllUI(activeDev)
 }
 
 func refreshAndRebuild() {

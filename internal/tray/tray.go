@@ -96,15 +96,26 @@ func calcBatteryColor(bat int) color.RGBA {
 func generateBatteryIcon(bat int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
 
-	bg := calcBatteryColor(bat)
+	var bg color.RGBA
+	if bat < 0 {
+		// Disconnected state: gray background with "?"
+		bg = color.RGBA{R: 128, G: 128, B: 128, A: 255}
+	} else {
+		bg = calcBatteryColor(bat)
+	}
 	draw.Draw(img, img.Bounds(), &image.Uniform{bg}, image.Point{}, draw.Src)
 
 	applyRoundedCorners(img, config.IconCornerRadius)
 
-	// change 100% to 99% for better fit in small tray icon
-	text := fmt.Sprintf("%d", bat)
-	if text == "100" {
-		text = "99"
+	var text string
+	if bat < 0 {
+		text = "?"
+	} else {
+		// change 100% to 99% for better fit in small tray icon
+		text = fmt.Sprintf("%d", bat)
+		if text == "100" {
+			text = "99"
+		}
 	}
 	textColor := color.Black
 
@@ -240,7 +251,12 @@ func DrawMenu(devs []keychron.Device) {
 			prefix = "✓ "
 		}
 
-		title := fmt.Sprintf("%s%s: %d%%", prefix, shorten(dev.Product), dev.Battery)
+		var title string
+		if dev.Connected {
+			title = fmt.Sprintf("%s%s: %d%%", prefix, shorten(dev.Product), dev.Battery)
+		} else {
+			title = fmt.Sprintf("%s%s: ?", prefix, shorten(dev.Product))
+		}
 		item := systray.AddMenuItem(title, dev.Path)
 
 		go func(idx int, itm *systray.MenuItem) {
@@ -261,21 +277,46 @@ func DrawMenu(devs []keychron.Device) {
 }
 
 func UpdateAllUI(dev keychron.Device) {
+	log.Printf("🔄 UpdateAllUI called: Product=%s, Battery=%d, Connected=%v", dev.Product, dev.Battery, dev.Connected)
 	if dev.Product == "" {
+		log.Printf("⚠️ No device selected")
 		systray.SetTooltip("Keychron Battery Monitor\n⚠️ No device selected")
+		UpdateTrayIconDisconnected()
 		return
 	}
 
-	tooltip := fmt.Sprintf(" %s \n🔋 %d%% ", dev.Product, dev.Battery)
+	var tooltip string
+	if dev.Connected {
+		tooltip = fmt.Sprintf(" %s \n🔋 %d%% ", dev.Product, dev.Battery)
+		log.Printf("🔋 Updating tray icon with battery: %d%%", dev.Battery)
+		UpdateTrayIcon(dev.Battery)
+	} else {
+		tooltip = fmt.Sprintf(" %s \n⚠️ Disconnected", dev.Product)
+		log.Printf("⚠️ Device disconnected, setting disconnected icon")
+		UpdateTrayIconDisconnected()
+	}
 	systray.SetTooltip(tooltip)
-
-	UpdateTrayIcon(dev.Battery)
 }
 
 func UpdateTrayIcon(bat int) {
+	log.Printf("🎨 Generating battery icon for %d%%", bat)
 	iconData := generateBatteryIcon(bat)
 	if iconData != nil {
+		log.Printf("✅ Setting tray icon (len=%d bytes)", len(iconData))
 		systray.SetIcon(iconData)
+	} else {
+		log.Printf("❌ Failed to generate icon")
+	}
+}
+
+func UpdateTrayIconDisconnected() {
+	log.Printf("🎨 Generating disconnected icon")
+	iconData := generateBatteryIcon(-1)
+	if iconData != nil {
+		log.Printf("✅ Setting disconnected tray icon (len=%d bytes)", len(iconData))
+		systray.SetIcon(iconData)
+	} else {
+		log.Printf("❌ Failed to generate disconnected icon")
 	}
 }
 
@@ -287,6 +328,26 @@ func GetActiveDevice() keychron.Device {
 }
 
 func SetActiveDevice(idx int) { activeIdx = idx }
+
+// SyncDevices updates the internal device list from the polling loop.
+// This ensures that battery level changes and device connection status
+// are reflected when UpdateAllUI is called.
+func SyncDevices(devs []keychron.Device) {
+	log.Printf("📋 Syncing %d devices to tray module", len(devs))
+	for i, d := range devs {
+		log.Printf("   [%d] %s: Battery=%d, Connected=%v", i, d.Product, d.Battery, d.Connected)
+	}
+	devices = devs
+	// Reset activeIdx if it's out of range (e.g., device was disconnected)
+	if activeIdx >= len(devices) {
+		if len(devices) > 0 {
+			activeIdx = 0
+		} else {
+			activeIdx = -1
+		}
+	}
+	log.Printf("📍 Active index after sync: %d", activeIdx)
+}
 
 func QuitChan() <-chan struct{}   { return chQuit }
 func DeviceClickChan() <-chan int { return ChDeviceClick }
