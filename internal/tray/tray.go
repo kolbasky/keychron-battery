@@ -24,6 +24,7 @@ import (
 var (
 	devices   []keychron.Device
 	activeIdx int = -1
+	menuItems []*systray.MenuItem
 
 	mQuit *systray.MenuItem
 
@@ -261,6 +262,7 @@ func applyRoundedCorners(img *image.RGBA, radius int) {
 
 func DrawMenu(devs []keychron.Device) {
 	devices = devs
+	menuItems = make([]*systray.MenuItem, len(devs))
 	if len(devs) > 0 && activeIdx == -1 {
 		activeIdx = 0
 	}
@@ -278,6 +280,7 @@ func DrawMenu(devs []keychron.Device) {
 			title = fmt.Sprintf("%s%s: ?", prefix, shorten(dev.Product))
 		}
 		item := systray.AddMenuItem(title, dev.Path)
+		menuItems[i] = item
 
 		go func(idx int, itm *systray.MenuItem) {
 			for range itm.ClickedCh {
@@ -370,6 +373,30 @@ func SyncDevices(devs []keychron.Device) {
 		}
 	}
 	log.Printf("📍 Active index after sync: %d", activeIdx)
+
+	// Update menu item titles with fresh battery status
+	updateMenuTitles()
+}
+
+// updateMenuTitles refreshes the title of each menu item to show current battery status
+func updateMenuTitles() {
+	for i, dev := range devices {
+		if i >= len(menuItems) {
+			break
+		}
+		prefix := "  "
+		if i == activeIdx {
+			prefix = "✓ "
+		}
+
+		var title string
+		if dev.Connected {
+			title = fmt.Sprintf("%s%s: %d%%", prefix, shorten(dev.Product), dev.Battery)
+		} else {
+			title = fmt.Sprintf("%s%s: ?", prefix, shorten(dev.Product))
+		}
+		menuItems[i].SetTitle(title)
+	}
 }
 
 func QuitChan() <-chan struct{}   { return chQuit }
