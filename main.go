@@ -16,6 +16,7 @@ import (
 func main() {
 	logger.SetupLogging()
 	keychron.Init()
+	tray.Init()
 	if keychron.InitError != nil {
 		log.Fatalf("HID init: %v", keychron.InitError)
 	}

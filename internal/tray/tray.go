@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"keychron-tray/internal/config"
 	"keychron-tray/internal/keychron"
@@ -29,16 +30,35 @@ var (
 	chQuit        = make(chan struct{}, 1)
 	ChDeviceClick = make(chan int, 1)
 
-	txtFace font.Face
+	txtFace   font.Face
+	iconCache [101][]byte // 0-99 + "?" at index 100
 )
 
-func init() {
+func Init() {
 	face, err := loadSystemFont()
 	if err != nil {
 		log.Fatalf("Failed to load system font: %v", err)
 	}
 	txtFace = face
 	log.Println("✓ Using system Segoe UI font")
+
+	// Pre-render all icons at startup
+	preRenderIcons()
+}
+
+func preRenderIcons() {
+	log.Println("🎨 Pre-rendering 101 icons (0-99 + ?)...")
+	start := time.Now()
+
+	// Generate icons 0-99
+	for i := 0; i < 100; i++ {
+		iconCache[i] = generateBatteryIcon(i)
+	}
+	// Generate "?" icon for disconnected state (index 100)
+	iconCache[100] = generateBatteryIcon(-1)
+
+	elapsed := time.Since(start)
+	log.Printf("✅ Pre-rendered 101 icons in %v", elapsed)
 }
 
 func loadSystemFont() (font.Face, error) {
@@ -299,24 +319,27 @@ func UpdateAllUI(dev keychron.Device) {
 }
 
 func UpdateTrayIcon(bat int) {
-	log.Printf("🎨 Generating battery icon for %d%%", bat)
-	iconData := generateBatteryIcon(bat)
+	log.Printf("🎨 Using cached icon for %d%%", bat)
+	if bat < 0 || bat > 99 {
+		bat = 100 // Use "?" icon
+	}
+	iconData := iconCache[bat]
 	if iconData != nil {
 		log.Printf("✅ Setting tray icon (len=%d bytes)", len(iconData))
 		systray.SetIcon(iconData)
 	} else {
-		log.Printf("❌ Failed to generate icon")
+		log.Printf("❌ Failed to get cached icon")
 	}
 }
 
 func UpdateTrayIconDisconnected() {
-	log.Printf("🎨 Generating disconnected icon")
-	iconData := generateBatteryIcon(-1)
+	log.Printf("🎨 Using cached disconnected icon")
+	iconData := iconCache[100]
 	if iconData != nil {
 		log.Printf("✅ Setting disconnected tray icon (len=%d bytes)", len(iconData))
 		systray.SetIcon(iconData)
 	} else {
-		log.Printf("❌ Failed to generate disconnected icon")
+		log.Printf("❌ Failed to get cached disconnected icon")
 	}
 }
 
