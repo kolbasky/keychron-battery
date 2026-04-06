@@ -74,7 +74,7 @@ try {
         Write-Host "Compressing with UPX..." -ForegroundColor Yellow
         $upxOut = "bin\keybat-upx.exe"
         $before = (Get-Item bin\keybat.exe).Length
-        upx -f --best --lzma -o "$upxOut" bin\keybat.exe 2>$null | Out-Null
+        upx -f -9 -o "$upxOut" bin\keybat.exe 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $after = (Get-Item $upxOut).Length
             $saved = [math]::Round(($before - $after) / 1MB, 2)
