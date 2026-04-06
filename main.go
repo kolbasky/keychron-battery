@@ -55,6 +55,8 @@ func onReady() {
 		case idx := <-tray.DeviceClickChan():
 			tray.SetActiveDevice(idx)
 			tray.UpdateAllUI(tray.GetActiveDevice())
+		case <-tray.RefreshChan():
+			refreshAndRebuild()
 		}
 	}
 }
@@ -72,12 +74,19 @@ func pollAndUpdate() {
 }
 
 func refreshAndRebuild() {
-	devs, _ := keychron.GetValidDevices()
+	log.Printf("🔄 Manual refresh triggered by user")
+	devs, err := keychron.GetValidDevices()
+	if err != nil {
+		log.Printf("⚠️ Refresh enumeration error: %v", err)
+		return
+	}
 	if len(devs) > 0 {
 		keychron.Devices = devs
 		if active := tray.GetActiveDevice(); active.Product == "" {
 			tray.SetActiveDevice(0)
 		}
 	}
+	// Rebuild the entire menu to add/remove device items
+	tray.RebuildMenu(devs)
 	tray.UpdateAllUI(tray.GetActiveDevice())
 }

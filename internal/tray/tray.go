@@ -26,13 +26,21 @@ var (
 	activeIdx int = -1
 	menuItems []*systray.MenuItem
 
-	mQuit *systray.MenuItem
+	mRefresh    *systray.MenuItem
+	mQuit       *systray.MenuItem
+	sepAfterDev *systray.MenuItem // separator after devices
+	sepAfterRef *systray.MenuItem // separator after refresh
+
+	staticMenuCreated bool
 
 	chQuit        = make(chan struct{}, 1)
 	ChDeviceClick = make(chan int, 1)
+	ChRefresh     = make(chan struct{}, 1)
 
 	txtFace   font.Face
 	iconCache [101][]byte // 0-99 + "?" at index 100
+
+	maxDeviceSlots = 10 // Pre-create 10 hidden device menu slots
 )
 
 func Init() {
@@ -262,12 +270,31 @@ func applyRoundedCorners(img *image.RGBA, radius int) {
 
 func DrawMenu(devs []keychron.Device) {
 	devices = devs
-	menuItems = make([]*systray.MenuItem, len(devs))
+	menuItems = make([]*systray.MenuItem, maxDeviceSlots)
 	if len(devs) > 0 && activeIdx == -1 {
 		activeIdx = 0
 	}
 
+	// Pre-create all device menu slots (hidden initially)
+	for i := 0; i < maxDeviceSlots; i++ {
+		title := fmt.Sprintf("  Slot %d", i+1)
+		item := systray.AddMenuItem(title, "")
+		item.Hide()
+		menuItems[i] = item
+
+		go func(idx int, itm *systray.MenuItem) {
+			for range itm.ClickedCh {
+				ChDeviceClick <- idx
+			}
+		}(i, item)
+	}
+
+	// Now show and configure only the slots we need
 	for i, dev := range devs {
+		if i >= maxDeviceSlots {
+			log.Printf("⚠️ Too many devices (%d), showing only first %d", len(devs), maxDeviceSlots)
+			break
+		}
 		prefix := "  "
 		if i == activeIdx {
 			prefix = "✓ "
@@ -279,24 +306,31 @@ func DrawMenu(devs []keychron.Device) {
 		} else {
 			title = fmt.Sprintf("%s%s: ?", prefix, shorten(dev.Product))
 		}
-		item := systray.AddMenuItem(title, dev.Path)
-		menuItems[i] = item
-
-		go func(idx int, itm *systray.MenuItem) {
-			for range itm.ClickedCh {
-				ChDeviceClick <- idx
-			}
-		}(i, item)
+		menuItems[i].SetTitle(title)
+		menuItems[i].SetTooltip(dev.Path)
+		menuItems[i].Show()
 	}
 
-	systray.AddSeparator()
-	mQuit = systray.AddMenuItem("🗙 Quit", "")
+	if !staticMenuCreated {
+		systray.AddSeparator()
+		mRefresh = systray.AddMenuItem("🔄 Refresh", "Rescan and poll devices")
 
-	go func() {
-		for range mQuit.ClickedCh {
-			chQuit <- struct{}{}
-		}
-	}()
+		go func() {
+			for range mRefresh.ClickedCh {
+				ChRefresh <- struct{}{}
+			}
+		}()
+
+		systray.AddSeparator()
+		mQuit = systray.AddMenuItem("🗙 Quit", "")
+
+		go func() {
+			for range mQuit.ClickedCh {
+				chQuit <- struct{}{}
+			}
+		}()
+		staticMenuCreated = true
+	}
 }
 
 func UpdateAllUI(dev keychron.Device) {
@@ -378,10 +412,58 @@ func SyncDevices(devs []keychron.Device) {
 	updateMenuTitles()
 }
 
+// RebuildMenu rebuilds only the device items in the context menu.
+// The static items (Refresh, Quit, separators) are preserved.
+// This is used when devices are added or removed (e.g., on manual refresh).
+func RebuildMenu(devs []keychron.Device) {
+	log.Printf("🔨 Rebuilding menu with %d devices", len(devs))
+
+	// Hide all existing device menu items first
+	for _, item := range menuItems {
+		item.Hide()
+	}
+
+	// Update devices list and activeIdx
+	devices = devs
+	if len(devs) > 0 && activeIdx == -1 {
+		activeIdx = 0
+	} else if activeIdx >= len(devs) {
+		if len(devs) > 0 {
+			activeIdx = 0
+		} else {
+			activeIdx = -1
+		}
+	}
+
+	// Show and configure only the slots we need
+	for i, dev := range devs {
+		if i >= maxDeviceSlots {
+			log.Printf("⚠️ Too many devices (%d), showing only first %d", len(devs), maxDeviceSlots)
+			break
+		}
+		prefix := "  "
+		if i == activeIdx {
+			prefix = "✓ "
+		}
+
+		var title string
+		if dev.Connected {
+			title = fmt.Sprintf("%s%s: %d%%", prefix, shorten(dev.Product), dev.Battery)
+		} else {
+			title = fmt.Sprintf("%s%s: ?", prefix, shorten(dev.Product))
+		}
+		menuItems[i].SetTitle(title)
+		menuItems[i].SetTooltip(dev.Path)
+		menuItems[i].Show()
+	}
+
+	log.Printf("✅ Menu rebuilt with %d device items shown", len(devs))
+}
+
 // updateMenuTitles refreshes the title of each menu item to show current battery status
 func updateMenuTitles() {
 	for i, dev := range devices {
-		if i >= len(menuItems) {
+		if i >= len(menuItems) || i >= maxDeviceSlots {
 			break
 		}
 		prefix := "  "
@@ -401,6 +483,8 @@ func updateMenuTitles() {
 
 func QuitChan() <-chan struct{}   { return chQuit }
 func DeviceClickChan() <-chan int { return ChDeviceClick }
+
+func RefreshChan() <-chan struct{} { return ChRefresh }
 
 func shorten(s string) string {
 	if len(s) > 24 {
