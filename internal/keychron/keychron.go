@@ -3,7 +3,6 @@ package keychron
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"keychron-tray/internal/config"
@@ -75,9 +74,10 @@ func GetValidDevices() ([]Device, error) {
 	}
 	var all []devInfo
 
+	log.Printf("🔢 Enumerating devices")
 	_ = hid.Enumerate(config.VidKeychron, 0, func(info *hid.DeviceInfo) error {
-		if int(info.UsagePage) < 0xFF00 || !strings.Contains(info.Path, "MI_04") {
-			// log.Printf("Skipping %s", info)
+		log.Printf("    Product: %s IfNr: %d UsePage: %d  Usage: %d", info.ProductStr, info.InterfaceNbr, info.UsagePage, info.Usage)
+		if int(info.UsagePage) < 0xFF00 || info.InterfaceNbr != 4 {
 			return nil
 		}
 		all = append(all, devInfo{info.Path, info.ProductID, info.ProductStr})
