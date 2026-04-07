@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keychron HID Sniffer</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        h1 { color: #61dafb; }
+        .container { max-width: 900px; margin: 0 auto; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 4px; margin-right: 10px; }
+        button:hover { background: #1177bb; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #log-container { background: #000; border: 1px solid #333; border-radius: 4px; padding: 15px; height: 500px; overflow-y: scroll; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; margin-top: 20px; white-space: pre-wrap; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; }
+        .timestamp { color: #569cd6; margin-right: 10px; }
+        .type-info { color: #4ec9b0; font-weight: bold; }
+        .type-error { color: #f48771; font-weight: bold; }
+        .type-success { color: #b5cea8; font-weight: bold; }
+        .hex { color: #ce9178; }
+        .highlight { background: #262626; padding: 2px 4px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🔍 Keychron HID Sniffer</h1>
+    <p>This tool uses the WebHID API to inspect traffic similar to the Keychron Launcher web app.</p>
+    
+    <div style="margin-bottom: 20px;">
+        <button id="btnConnect">Connect Keychron Device</button>
+        <button id="btnPoll" disabled>Send Poll Command (0xB3 0x06)</button>
+        <button id="btnClear" style="background:#444;">Clear Log</button>
+    </div>
+
+    <div id="status">Status: <span id="statusText">Disconnected</span></div>
+    <div id="log-container"></div>
+</div>
+
+<script>
+    let device = null;
+    let inputReportListener = null;
+
+    const logContainer = document.getElementById('log-container');
+    const statusText = document.getElementById('statusText');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnPoll = document.getElementById('btnPoll');
+    const btnClear = document.getElementById('btnClear');
+
+    function log(message, type = 'info') {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString() + '.' + String(now.getMilliseconds()).padStart(3, '0');
+        
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        
+        let typeLabel = 'ℹ️';
+        if (type === 'error') typeLabel = '❌';
+        if (type === 'success') typeLabel = '✅';
+        if (type === 'rx') typeLabel = '⬇️';
+        if (type === 'tx') typeLabel = '⬆️';
+
+        div.innerHTML = `<span class="timestamp">[${timeStr}]</span><span class="type-${type}"> ${typeLabel} ${message}</span>`;
+        logContainer.appendChild(div);
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function buf2hex(buffer) {
+        return [...new Uint8Array(buffer)].map(x => x.toString(16).padStart(2, '0')).join(' ');
+    }
+
+    btnClear.addEventListener('click', () => {
+        logContainer.innerHTML = '';
+    });
+
+    btnConnect.addEventListener('click', async () => {
+        try {
+            const devices = await navigator.hid.requestDevice({
+                filters: [{ vendorId: 0x3434 }]
+            });
+
+            if (devices.length === 0) {
+                log('No device selected.', 'error');
+                return;
+            }
+
+            device = devices[0];
+            
+            log(`Connected to: ${device.productName} (VID: 0x${device.vendorId.toString(16)}, PID: 0x${device.productId.toString(16)})`, 'success');
+            log(`Collections: ${device.collections.length}`);
+            
+            device.collections.forEach((collection, index) => {
+                log(`  Collection ${index}: UsagePage=0x${collection.usagePage.toString(16)}, Usage=0x${collection.usage.toString(16)}`);
+                if(collection.inputReports && collection.inputReports.length > 0) {
+                    log(`    Input Reports: ${collection.inputReports.length} (IDs: ${collection.inputReports.map(r => r.reportId).join(', ')})`);
+                }
+                if(collection.outputReports && collection.outputReports.length > 0) {
+                    log(`    Output Reports: ${collection.outputReports.length} (IDs: ${collection.outputReports.map(r => r.reportId).join(', ')})`);
+                }
+                if(collection.featureReports && collection.featureReports.length > 0) {
+                    log(`    Feature Reports: ${collection.featureReports.length} (IDs: ${collection.featureReports.map(r => r.reportId).join(', ')})`);
+                }
+            });
+
+            await device.open();
+            statusText.textContent = `Connected to ${device.productName}`;
+            statusText.style.color = '#4ec9b0';
+            btnConnect.disabled = true;
+            btnPoll.disabled = false;
+
+            startListening(device);
+
+        } catch (error) {
+            log(`Error: ${error.message}`, 'error');
+        }
+    });
+
+    btnPoll.addEventListener('click', async () => {
+        if (!device || !device.opened) return;
+        
+        try {
+            log('Sending Poll Command: [0xB3, 0x06] via Feature Report...', 'tx');
+            
+            const reportId = 0xB3;
+            const data = new Uint8Array([0x06]); 
+            const buffer = new Uint8Array([reportId, ...data]);
+
+            await device.sendFeatureReport(reportId, data);
+            log('Poll command sent successfully.', 'success');
+
+            try {
+                log('Attempting to read Feature Report 0xB4 (Response)...', 'tx');
+                const report = await device.receiveFeatureReport(0xB4);
+                const dataArray = new Uint8Array(report.buffer);
+                log(`Received Feature Report 0xB4: [${buf2hex(report.buffer)}]`, 'rx');
+                parseBatteryResponse(dataArray);
+            } catch (e) {
+                log(`No immediate feature response (or timeout): ${e.message}`, 'info');
+            }
+
+        } catch (error) {
+            log(`Poll Failed: ${error.message}`, 'error');
+        }
+    });
+
+    function startListening(device) {
+        device.addEventListener('inputreport', event => {
+            const { data, reportId, device: d } = event;
+            const dataArray = new Uint8Array(data.buffer);
+            
+            log(`⚡ Interrupt Report Received! ID: 0x${reportId.toString(16)}, Data: [${buf2hex(data.buffer)}]`, 'rx');
+            
+            if (reportId === 0xB4 || (dataArray.length >= 2 && dataArray[0] === 0xB4)) {
+                log('>>> POTENTIAL BATTERY BROADCAST DETECTED <<<', 'success');
+                parseBatteryResponse(dataArray);
+            }
+        });
+
+        log('Listening for Interrupt Reports (inputreport event)...', 'info');
+    }
+
+    function parseBatteryResponse(data) {
+        if (data.length < 2) return;
+        
+        let level = -1;
+        let charging = null;
+
+        for (let i = 1; i < Math.min(data.length, 5); i++) {
+            if (data[i] <= 100 && data[i] >= 0) {
+                if (i === 1 || i === 2) {
+                    level = data[i];
+                    break;
+                }
+            }
+        }
+
+        if (level !== -1) {
+            log(`Parsed Battery Level: ${level}%`, 'success');
+        }
+    }
+
+    window.addEventListener('beforeunload', () => {
+        if (device && device.opened) {
+            device.close();
+        }
+    });
+</script>
+
+</body>
+</html>
