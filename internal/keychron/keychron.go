@@ -3,6 +3,7 @@ package keychron
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"keychron-tray/internal/config"
@@ -75,6 +76,10 @@ func GetValidDevices() ([]Device, error) {
 	var all []devInfo
 
 	_ = hid.Enumerate(config.VidKeychron, 0, func(info *hid.DeviceInfo) error {
+		if int(info.UsagePage) < 0xFF00 || !strings.Contains(info.Path, "MI_04") {
+			// log.Printf("Skipping %s", info)
+			return nil
+		}
 		all = append(all, devInfo{info.Path, info.ProductID, info.ProductStr})
 		return nil
 	})
@@ -83,16 +88,16 @@ func GetValidDevices() ([]Device, error) {
 	for _, d := range all {
 		bat, err := GetBatteryData(d.path)
 		if err != nil {
-			fmt.Printf("🗙 %s: %v\n", d.path, err)
+			log.Printf("🗙 %s: %v\n", d.path, err)
 			continue
 		}
-		fmt.Printf("✓ %s: %d%%\n", d.product, bat)
+		log.Printf("✓ %s: %d%%\n", d.product, bat)
 		valid = append(valid, Device{
 			Path: d.path, PID: d.pid, Product: d.product, Battery: bat, Connected: true,
 		})
 	}
 
-	fmt.Printf("📊 Found %d valid devices\n", len(valid))
+	log.Printf("📊 Found %d valid devices\n", len(valid))
 	return valid, nil
 }
 
